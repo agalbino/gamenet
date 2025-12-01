@@ -3,6 +3,11 @@ using Mirror;
 using System.Linq;
 using System;
 using System.Collections.Generic;
+using UnityEngine.SceneManagement;
+using System.IO;
+using System.Collections;
+using System.Data.Common;
+using Mirror.Examples.Basic;
 
 /*
 	Documentation: https://mirror-networking.gitbook.io/docs/components/network-room-manager
@@ -28,12 +33,51 @@ public class GameNetworkRoomManager : NetworkRoomManager
     // have to cast to this type everywhere.
     public static new GameNetworkRoomManager singleton => (GameNetworkRoomManager)NetworkRoomManager.singleton;
 
+    [Scene, SerializeField]
+    string _firstSceneToLoad;
+
+    // Scene Management
+    List<string> _sceneNames = new();
+    bool _isSubsceneLoaded = false;
+    bool _isInTransition = false;
+
     #region Server Callbacks
 
     /// <summary>
     /// This is called on the server when the server is started - including when a host is started.
     /// </summary>
-    public override void OnRoomStartServer() { }
+    public override void OnRoomStartServer()
+    {
+        // Load all scenes
+        // i is 3 because Persistent must be placed after Lobby and Room scenes in BuildSettings
+        for (int i = 3; i < SceneManager.sceneCountInBuildSettings; i++)
+        {
+            _sceneNames.Add(Path.GetFileNameWithoutExtension(SceneUtility.GetScenePathByBuildIndex(i)));
+        }
+    }
+
+    public override void OnServerSceneChanged(string sceneName)
+    {
+        base.OnServerSceneChanged(sceneName);
+
+        if(sceneName == GameplayScene)
+        {
+            StartCoroutine(ServerLoadSubscenes());
+        }
+    }
+
+    IEnumerator ServerLoadSubscenes()
+    {
+        foreach(string sceneName in _sceneNames)
+        {
+            yield return SceneManager.LoadSceneAsync(sceneName, new LoadSceneParameters
+            {
+                loadSceneMode = LoadSceneMode.Additive,
+                localPhysicsMode = LocalPhysicsMode.Physics3D
+            });
+        }
+        _isSubsceneLoaded = true;
+    }
 
     /// <summary>
     /// This is called on the server when the server is stopped - including when a host is stopped.
@@ -50,23 +94,78 @@ public class GameNetworkRoomManager : NetworkRoomManager
     /// </summary>
     public override void OnRoomStopHost() { }
 
+    public override void OnClientSceneChanged()
+    {
+        if (!_isInTransition)
+            base.OnClientSceneChanged();
+    }
+
+    public override void OnClientChangeScene(string newSceneName, SceneOperation sceneOperation, bool customHandling)
+    {
+        //base.OnClientChangeScene(newSceneName, sceneOperation, customHandling);
+
+        if(sceneOperation == SceneOperation.LoadAdditive)
+            StartCoroutine(LoadAdditiveScene(newSceneName));
+
+        if (sceneOperation == SceneOperation.UnloadAdditive)
+            StartCoroutine(UnloadAdditiveScene(newSceneName));
+    }
+
+    IEnumerator LoadAdditiveScene(string sceneName)
+    {
+        _isInTransition = true;
+
+        // So the client can also load scenes additively
+        if (mode == NetworkManagerMode.ClientOnly)
+        {
+            loadingSceneAsync = SceneManager.LoadSceneAsync(sceneName, LoadSceneMode.Additive);
+            
+            while (loadingSceneAsync != null && !loadingSceneAsync.isDone)
+                yield return null;
+        }
+
+        NetworkClient.isLoadingScene = false;
+        _isInTransition = false;
+
+        OnRoomClientSceneChanged();
+    }
+
+    IEnumerator UnloadAdditiveScene(string sceneName)
+    {
+        _isInTransition = true;
+
+        if (mode == NetworkManagerMode.ClientOnly)
+        {
+            yield return SceneManager.UnloadSceneAsync(sceneName);
+            yield return Resources.UnloadUnusedAssets();
+        }
+
+        NetworkClient.isLoadingScene = false;
+        _isInTransition = false;
+
+        OnRoomClientSceneChanged();
+        //OnClientSceneChanged();
+    }
+
+#region Removed
     /// <summary>
     /// This is called on the server when a new client connects to the server.
     /// </summary>
     /// <param name="conn">The new connection.</param>
-    public override void OnRoomServerConnect(NetworkConnectionToClient conn) { }
+    // public override void OnRoomServerConnect(NetworkConnectionToClient conn) { }
 
-    /// <summary>
-    /// This is called on the server when a client disconnects.
-    /// </summary>
-    /// <param name="conn">The connection that disconnected.</param>
-    public override void OnRoomServerDisconnect(NetworkConnectionToClient conn) { }
+    // /// <summary>
+    // /// This is called on the server when a client disconnects.
+    // /// </summary>
+    // /// <param name="conn">The connection that disconnected.</param>
+    // public override void OnRoomServerDisconnect(NetworkConnectionToClient conn) { }
 
-    /// <summary>
-    /// This is called on the server when a networked scene finishes loading.
-    /// </summary>
-    /// <param name="sceneName">Name of the new scene.</param>
-    public override void OnRoomServerSceneChanged(string sceneName) { }
+    // /// <summary>
+    // /// This is called on the server when a networked scene finishes loading.
+    // /// </summary>
+    // /// <param name="sceneName">Name of the new scene.</param>
+    // public override void OnRoomServerSceneChanged(string sceneName) { }
+#endregion
 
     /// <summary>
     /// This allows customization of the creation of the room-player object on the server.
@@ -118,7 +217,54 @@ public class GameNetworkRoomManager : NetworkRoomManager
     public override bool OnRoomServerSceneLoadedForPlayer(NetworkConnectionToClient conn, GameObject roomPlayer, GameObject gamePlayer)
     {
         //roomPlayer.GetComponent<GameNetworkRoomPlayer>().RpcDisableCanvas();
-        return base.OnRoomServerSceneLoadedForPlayer(conn, roomPlayer, gamePlayer);
+        //return base.OnRoomServerSceneLoadedForPlayer(conn, roomPlayer, gamePlayer);
+
+        NetworkServer.ReplacePlayerForConnection(conn, gamePlayer, ReplacePlayerOptions.KeepAuthority);
+
+        StartCoroutine(AddPlayerToGameScene(conn));
+        return false;
+    }
+
+    IEnumerator AddPlayerToGameScene(NetworkConnectionToClient conn)
+    {
+        while (!_isSubsceneLoaded)
+            yield return null;
+
+        NetworkIdentity[] allObjectsWithNetworkId = FindObjectsOfType<NetworkIdentity>();
+
+        Ball ball = null;
+        foreach (NetworkIdentity id in allObjectsWithNetworkId)
+        { 
+            id.enabled = true;
+
+            if (id.gameObject.TryGetComponent(out Ball foundBall))
+            {
+                ball = foundBall;
+                break;
+            }
+        }
+
+        // Remove from connection before putting to another scene
+        GameObject playerObj = conn.identity.gameObject;
+        NetworkServer.RemovePlayerForConnection(conn, RemovePlayerOptions.KeepActive);
+
+        // Move to new scene then reconnect the player after the frame
+        conn.Send(new SceneMessage { sceneName = _firstSceneToLoad, sceneOperation = SceneOperation.LoadAdditive, customHandling = true });
+        
+        SceneManager.MoveGameObjectToScene(playerObj, SceneManager.GetSceneByPath(_firstSceneToLoad));
+        SceneManager.MoveGameObjectToScene(ball.gameObject, SceneManager.GetSceneByPath(_firstSceneToLoad));
+
+        //Debug.Log($"Moved {playerObj} and {ball.name} to {_firstSceneToLoad}");
+
+        yield return new WaitForEndOfFrame();
+
+        // Add player to connection then set rigidbody kinematic to false
+        NetworkServer.AddPlayerForConnection(conn, playerObj);
+        playerObj.GetComponent<Rigidbody>().isKinematic = false;
+        ball.gameObject.GetComponent<Rigidbody>().isKinematic = false;
+
+        // Move to playerStart pos
+        playerObj.transform.position = GameObject.FindGameObjectWithTag("PlayerSpawn").transform.position;
     }
 
     /// <summary>

@@ -687,7 +687,7 @@ AudioListener:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 963194225}
-  m_Enabled: 1
+  m_Enabled: 0
 --- !u!20 &963194227
 Camera:
   m_ObjectHideFlags: 0
@@ -1001,6 +1001,7 @@ GameObject:
   - component: {fileID: 1088829961}
   - component: {fileID: 1088829958}
   - component: {fileID: 1088829962}
+  - component: {fileID: 1088829963}
   m_Layer: 0
   m_Name: NetworkManager
   m_TagString: Untagged
@@ -1102,9 +1103,22 @@ MonoBehaviour:
   minPlayers: 1
   roomPlayerPrefab: {fileID: 3511165680064828681, guid: a99234b74f6c1b7428e11462dca3f753, type: 3}
   RoomScene: Assets/Scenes/RoomScene.unity
-  GameplayScene: Assets/Scenes/GameplayScene.unity
+  GameplayScene: Assets/Scenes/PersistentScene.unity
   _allPlayersReady: 0
   clientIndex: 0
+  _firstSceneToLoad: Assets/Scenes/GameplayScene - Main.unity
+--- !u!114 &1088829963
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1088829957}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b979f26c95d34324ba005bfacfa9c4fc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &1235331126
 GameObject:
   m_ObjectHideFlags: 0

@@ -12,10 +12,10 @@ public class Goal : MonoBehaviour
             // Update score text based on ball owner from the Ball script
             if (_ball._ballOwner == null) return;
 
-            Debug.Log($"{_ball} Goal by {_ball._ballOwner}");
+            //Debug.Log($"{_ball} Goal by {_ball._ballOwner}");
 
             OnGoalScored?.Invoke(_ball._ballOwner);
-            Destroy(_ball.gameObject);
+            //Destroy(_ball.gameObject);
         }
     }
 }

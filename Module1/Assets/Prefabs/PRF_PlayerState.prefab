@@ -146,7 +146,7 @@ GameObject:
   - component: {fileID: 6819270414408915177}
   - component: {fileID: 580888260388449120}
   m_Layer: 0
-  m_Name: PlayerState
+  m_Name: PRF_PlayerState
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
